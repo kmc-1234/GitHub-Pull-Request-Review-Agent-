@@ -43,6 +43,9 @@ Static tools are optional at runtime. If `ruff`, `bandit`, or `semgrep` are miss
 - Server install script guide: [docs/helm-server-install.md](docs/helm-server-install.md)
 - Default Docker Hub image: `kmc173/github-pull-request-review-agent`
 
+After deployment, verify the webhook by opening a small pull request against a
+repository where the GitHub App is installed.
+
 ## Repository rules
 
 Per-repository rules can be stored in `review_rules` or configured by extending `RepositoryConfigStore`. Rules are passed to the LLM reviewer and can also set limits like minimum confidence and maximum comments.
