@@ -17,13 +17,18 @@ def root() -> dict[str, str]:
     return {
         "service": "GitHub Pull Request Review Agent",
         "status": "running",
-        "health": "/healthz",
+        "health": "/api/healthz",
         "webhook": "/api/github/webhook",
     }
 
 
 @app.get("/healthz")
 def healthz() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@app.get("/api/healthz")
+def api_healthz() -> dict[str, str]:
     return {"status": "ok"}
 
 
