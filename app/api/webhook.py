@@ -65,3 +65,17 @@ async def github_webhook(
     }
     result = review_pull_request.delay(job_payload)
     return WebhookAccepted(accepted=True, job_id=result.id)
+
+
+@router.get("/webhook")
+def github_webhook_info() -> dict[str, object]:
+    settings = get_settings()
+    return {
+        "status": "ready",
+        "endpoint": "/api/github/webhook",
+        "method_for_github": "POST",
+        "browser_check": "ok",
+        "webhook_secret_configured": bool(settings.github_webhook_secret),
+        "github_app_configured": bool(settings.github_app_id and settings.github_private_key),
+        "message": "Use this URL in GitHub App webhook settings. GitHub will call it with POST.",
+    }
