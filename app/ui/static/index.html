@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PR Review Agent</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">PR</div>
+        <div>
+          <strong>Review Agent</strong>
+          <span>Quality Gate</span>
+        </div>
+      </div>
+      <nav>
+        <button class="nav-item active" data-view="overview">Overview</button>
+        <button class="nav-item" data-view="projects">Projects</button>
+        <button class="nav-item" data-view="findings">Issues</button>
+        <button class="nav-item" data-view="runs">Review Runs</button>
+        <button class="nav-item" data-view="rules">Rules</button>
+        <button class="nav-item" data-view="setup">Setup</button>
+      </nav>
+      <div class="sidebar-footer">
+        <span id="api-status" class="status-dot"></span>
+        <span>API status</span>
+      </div>
+    </aside>
+
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">GitHub Pull Request Review Agent</p>
+          <h1 id="page-title">Overview</h1>
+        </div>
+        <div class="actions">
+          <button id="refresh-button" class="button">Refresh</button>
+          <a class="button secondary" href="/api/github/webhook">Webhook</a>
+        </div>
+      </header>
+
+      <section id="overview" class="view active">
+        <div class="grid stats">
+          <article class="metric">
+            <span>Quality Gate</span>
+            <strong id="quality-gate">Loading</strong>
+          </article>
+          <article class="metric">
+            <span>Projects</span>
+            <strong id="total-projects">0</strong>
+          </article>
+          <article class="metric">
+            <span>Review Runs</span>
+            <strong id="total-runs">0</strong>
+          </article>
+          <article class="metric">
+            <span>Findings</span>
+            <strong id="total-findings">0</strong>
+          </article>
+        </div>
+
+        <div class="grid two">
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Severity Distribution</h2>
+            </div>
+            <div id="severity-bars" class="bars"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Review Status</h2>
+            </div>
+            <div id="status-bars" class="bars"></div>
+          </section>
+        </div>
+
+        <section class="panel">
+          <div class="panel-header">
+            <h2>Top Categories</h2>
+          </div>
+          <div id="category-list" class="category-list"></div>
+        </section>
+      </section>
+
+      <section id="projects" class="view">
+        <section class="panel">
+          <div class="panel-header">
+            <h2>Projects</h2>
+            <span class="muted">Repositories reviewed by the agent</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Repository</th>
+                  <th>Runs</th>
+                  <th>Status</th>
+                  <th>Decision</th>
+                  <th>Findings</th>
+                  <th>Last Review</th>
+                </tr>
+              </thead>
+              <tbody id="projects-table"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section id="findings" class="view">
+        <section class="panel">
+          <div class="panel-header">
+            <h2>Issues</h2>
+            <span class="muted">Latest validated findings</span>
+          </div>
+          <div class="filters">
+            <select id="severity-filter">
+              <option value="">All severities</option>
+              <option value="critical">Critical</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </select>
+            <input id="finding-search" placeholder="Search title, file, repository" />
+          </div>
+          <div id="findings-list" class="findings-list"></div>
+        </section>
+      </section>
+
+      <section id="runs" class="view">
+        <section class="panel">
+          <div class="panel-header">
+            <h2>Review Runs</h2>
+            <span class="muted">Webhook-triggered jobs and outcomes</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Repository</th>
+                  <th>PR</th>
+                  <th>Status</th>
+                  <th>Decision</th>
+                  <th>Created</th>
+                </tr>
+              </thead>
+              <tbody id="runs-table"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section id="rules" class="view">
+        <div class="grid two">
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Repository Rules</h2>
+              <span class="muted">Rules are passed into the AI reviewer</span>
+            </div>
+            <div id="rules-list" class="rules-list"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Edit Rules</h2>
+            </div>
+            <form id="rules-form" class="form">
+              <label>
+                Repository full name
+                <input id="rules-repository" placeholder="owner/repository" required />
+              </label>
+              <label>
+                JSON rules
+                <textarea id="rules-json" rows="14">{
+  "instructions": [
+    "Focus on bugs, security, and test gaps.",
+    "Avoid formatting-only comments."
+  ],
+  "min_confidence": 0.72,
+  "max_comments": 25
+}</textarea>
+              </label>
+              <button class="button" type="submit">Save Rules</button>
+              <p id="rules-message" class="message"></p>
+            </form>
+          </section>
+        </div>
+      </section>
+
+      <section id="setup" class="view">
+        <div class="grid two">
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Webhook Setup</h2>
+            </div>
+            <div class="setup-list">
+              <div>
+                <span>Webhook URL</span>
+                <code id="webhook-url"></code>
+              </div>
+              <div>
+                <span>Health URL</span>
+                <code id="health-url"></code>
+              </div>
+              <div>
+                <span>Required method</span>
+                <code>POST</code>
+              </div>
+              <div>
+                <span>Required header</span>
+                <code>X-Hub-Signature-256</code>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <h2>GitHub App Permissions</h2>
+            </div>
+            <ul class="check-list">
+              <li>Pull requests: Read and write</li>
+              <li>Contents: Read</li>
+              <li>Metadata: Read</li>
+              <li>Subscribe to pull request events</li>
+              <li>Set a valid webhook secret in Helm</li>
+            </ul>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
