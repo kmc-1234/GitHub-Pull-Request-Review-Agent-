@@ -12,6 +12,16 @@ app = FastAPI(title="GitHub Pull Request Review Agent", version="0.1.0")
 app.include_router(github_router)
 
 
+@app.get("/")
+def root() -> dict[str, str]:
+    return {
+        "service": "GitHub Pull Request Review Agent",
+        "status": "running",
+        "health": "/healthz",
+        "webhook": "/api/github/webhook",
+    }
+
+
 @app.get("/healthz")
 def healthz() -> dict[str, str]:
     return {"status": "ok"}
