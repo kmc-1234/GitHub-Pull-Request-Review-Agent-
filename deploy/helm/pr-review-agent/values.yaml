@@ -25,8 +25,9 @@ service:
 
 ingress:
   enabled: false
-  className: nginx
-  host: pr-review-agent.example.com
+  className: public
+  # Leave empty to create a catch-all ingress for node IP access.
+  host: ""
   annotations: {}
   tls:
     enabled: false
