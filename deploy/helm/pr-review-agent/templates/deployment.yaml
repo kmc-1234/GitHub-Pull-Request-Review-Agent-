@@ -1,0 +1,229 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pr-review-agent-api
+spec:
+  replicas: {{ .Values.api.replicaCount }}
+  selector:
+    matchLabels:
+      app: pr-review-agent-api
+  template:
+    metadata:
+      labels:
+        app: pr-review-agent-api
+    spec:
+      containers:
+        - name: api
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 8000
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+{{ toYaml .Values.api.resources | indent 12 }}
+          envFrom:
+            - configMapRef:
+                name: pr-review-agent-config
+            - secretRef:
+                name: {{ default "pr-review-agent-secrets" .Values.existingSecret.name }}
+      initContainers:
+        - name: migrate
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["alembic", "upgrade", "head"]
+          envFrom:
+            - configMapRef:
+                name: pr-review-agent-config
+            - secretRef:
+                name: {{ default "pr-review-agent-secrets" .Values.existingSecret.name }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pr-review-agent-worker
+spec:
+  replicas: {{ .Values.worker.replicaCount }}
+  selector:
+    matchLabels:
+      app: pr-review-agent-worker
+  template:
+    metadata:
+      labels:
+        app: pr-review-agent-worker
+    spec:
+      containers:
+        - name: worker
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["celery", "-A", "app.workers.celery_app", "worker", "--loglevel=INFO"]
+          resources:
+{{ toYaml .Values.worker.resources | indent 12 }}
+          envFrom:
+            - configMapRef:
+                name: pr-review-agent-config
+            - secretRef:
+                name: {{ default "pr-review-agent-secrets" .Values.existingSecret.name }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pr-review-agent-api
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    app: pr-review-agent-api
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: 8000
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pr-review-agent-config
+data:
+  APP_ENV: "{{ .Values.env.APP_ENV }}"
+  LOG_LEVEL: "{{ .Values.env.LOG_LEVEL }}"
+  GITHUB_API_URL: "{{ .Values.env.GITHUB_API_URL }}"
+  OPENAI_MODEL: "{{ .Values.env.OPENAI_MODEL }}"
+  MIN_CONFIDENCE: "{{ .Values.env.MIN_CONFIDENCE }}"
+  MAX_COMMENTS: "{{ .Values.env.MAX_COMMENTS }}"
+{{- if not .Values.existingSecret.name }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: pr-review-agent-secrets
+type: Opaque
+stringData:
+  DATABASE_URL: "{{ .Values.secrets.DATABASE_URL }}"
+  REDIS_URL: "{{ .Values.secrets.REDIS_URL }}"
+  GITHUB_WEBHOOK_SECRET: "{{ .Values.secrets.GITHUB_WEBHOOK_SECRET }}"
+  GITHUB_APP_ID: "{{ .Values.secrets.GITHUB_APP_ID }}"
+  GITHUB_PRIVATE_KEY: "{{ .Values.secrets.GITHUB_PRIVATE_KEY }}"
+  OPENAI_API_KEY: "{{ .Values.secrets.OPENAI_API_KEY }}"
+{{- end }}
+{{- if .Values.postgresql.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pr-review-agent-postgresql
+spec:
+  selector:
+    app: pr-review-agent-postgresql
+  ports:
+    - port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: pr-review-agent-postgresql
+spec:
+  serviceName: pr-review-agent-postgresql
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pr-review-agent-postgresql
+  template:
+    metadata:
+      labels:
+        app: pr-review-agent-postgresql
+    spec:
+      containers:
+        - name: postgresql
+          image: "{{ .Values.postgresql.image }}"
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: "{{ .Values.postgresql.database }}"
+            - name: POSTGRES_USER
+              value: "{{ .Values.postgresql.username }}"
+            - name: POSTGRES_PASSWORD
+              value: "{{ .Values.postgresql.password }}"
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: "{{ .Values.postgresql.storageClassName }}"
+        resources:
+          requests:
+            storage: "{{ .Values.postgresql.storageSize }}"
+{{- end }}
+{{- if .Values.redis.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pr-review-agent-redis
+spec:
+  selector:
+    app: pr-review-agent-redis
+  ports:
+    - port: 6379
+      targetPort: 6379
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pr-review-agent-redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pr-review-agent-redis
+  template:
+    metadata:
+      labels:
+        app: pr-review-agent-redis
+    spec:
+      containers:
+        - name: redis
+          image: "{{ .Values.redis.image }}"
+          ports:
+            - containerPort: 6379
+{{- end }}
+{{- if .Values.ingress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: pr-review-agent-api
+  annotations:
+{{ toYaml .Values.ingress.annotations | indent 4 }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host }}
+      secretName: {{ .Values.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: pr-review-agent-api
+                port:
+                  number: {{ .Values.service.port }}
+{{- end }}

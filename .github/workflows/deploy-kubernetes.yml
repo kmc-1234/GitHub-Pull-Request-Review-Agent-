@@ -1,0 +1,99 @@
+name: Deploy to Kubernetes
+
+on:
+  workflow_dispatch:
+    inputs:
+      namespace:
+        description: Kubernetes namespace
+        required: true
+        default: pr-review-agent
+      image_tag:
+        description: Docker image tag to deploy, for example v0.1.0 or sha-abc1234
+        required: true
+        default: v0.1.0
+      ingress_host:
+        description: Public host name for the webhook endpoint
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_REPOSITORY: kmc173/github-pull-request-review-agent
+  RELEASE_NAME: pr-review-agent
+  CHART_PATH: deploy/helm/pr-review-agent
+  APP_SECRET_NAME: pr-review-agent-secrets
+
+jobs:
+  deploy:
+    name: Helm upgrade
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.15.4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.30.3
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p "$HOME/.kube"
+          echo "${KUBE_CONFIG_BASE64}" | base64 --decode > "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
+        env:
+          KUBE_CONFIG_BASE64: ${{ secrets.KUBE_CONFIG_BASE64 }}
+
+      - name: Confirm Docker image tag exists
+        run: docker manifest inspect "$IMAGE_REPOSITORY:${{ inputs.image_tag }}" > /dev/null
+
+      - name: Create namespace
+        run: kubectl create namespace "${{ inputs.namespace }}" --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Create or update application secret
+        run: |
+          kubectl -n "${{ inputs.namespace }}" create secret generic "$APP_SECRET_NAME" \
+            --from-literal=DATABASE_URL="${DATABASE_URL}" \
+            --from-literal=REDIS_URL="${REDIS_URL}" \
+            --from-literal=GITHUB_WEBHOOK_SECRET="${GITHUB_WEBHOOK_SECRET}" \
+            --from-literal=GITHUB_APP_ID="${GITHUB_APP_ID}" \
+            --from-literal=GITHUB_PRIVATE_KEY="${GITHUB_PRIVATE_KEY}" \
+            --from-literal=OPENAI_API_KEY="${OPENAI_API_KEY}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
+          GITHUB_WEBHOOK_SECRET: ${{ secrets.GITHUB_WEBHOOK_SECRET }}
+          GITHUB_APP_ID: ${{ secrets.GITHUB_APP_ID }}
+          GITHUB_PRIVATE_KEY: ${{ secrets.GITHUB_PRIVATE_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+      - name: Deploy with Helm
+        run: |
+          INGRESS_ARGS=()
+          if [ -n "${{ inputs.ingress_host }}" ]; then
+            INGRESS_ARGS=(
+              --set ingress.enabled=true
+              --set-string ingress.host="${{ inputs.ingress_host }}"
+            )
+          fi
+
+          helm upgrade --install "$RELEASE_NAME" "$CHART_PATH" \
+            --namespace "${{ inputs.namespace }}" \
+            --set-string image.repository="$IMAGE_REPOSITORY" \
+            --set-string image.tag="${{ inputs.image_tag }}" \
+            --set-string existingSecret.name="$APP_SECRET_NAME" \
+            "${INGRESS_ARGS[@]}"
+
+      - name: Verify rollout
+        run: |
+          kubectl -n "${{ inputs.namespace }}" rollout status deploy/pr-review-agent-api --timeout=180s
+          kubectl -n "${{ inputs.namespace }}" rollout status deploy/pr-review-agent-worker --timeout=180s

@@ -1,0 +1,58 @@
+image:
+  repository: kmc173/github-pull-request-review-agent
+  tag: latest
+  pullPolicy: IfNotPresent
+
+env:
+  APP_ENV: production
+  LOG_LEVEL: INFO
+  OPENAI_MODEL: gpt-4.1-mini
+  MIN_CONFIDENCE: "0.72"
+  MAX_COMMENTS: "25"
+  GITHUB_API_URL: https://api.github.com
+
+api:
+  replicaCount: 2
+  resources: {}
+
+worker:
+  replicaCount: 1
+  resources: {}
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: nginx
+  host: pr-review-agent.example.com
+  annotations: {}
+  tls:
+    enabled: false
+    secretName: pr-review-agent-tls
+
+existingSecret:
+  # Set this to use a Kubernetes Secret created outside Helm.
+  name: ""
+
+postgresql:
+  enabled: true
+  image: postgres:16-alpine
+  storageClassName: longhorn
+  storageSize: 8Gi
+  database: review
+  username: review
+  password: review-change-me
+
+redis:
+  enabled: true
+  image: redis:7-alpine
+
+secrets:
+  DATABASE_URL: "postgresql+psycopg://review:review-change-me@pr-review-agent-postgresql:5432/review"
+  REDIS_URL: "redis://pr-review-agent-redis:6379/0"
+  GITHUB_WEBHOOK_SECRET: ""
+  GITHUB_APP_ID: ""
+  GITHUB_PRIVATE_KEY: ""
+  OPENAI_API_KEY: ""

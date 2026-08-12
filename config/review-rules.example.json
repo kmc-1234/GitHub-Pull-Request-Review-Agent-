@@ -1,0 +1,9 @@
+{
+  "instructions": [
+    "Prefer comments that identify concrete bugs, security risks, or test gaps.",
+    "Do not comment on formatting unless it affects behavior or maintainability.",
+    "Security findings should include an exploit scenario when possible."
+  ],
+  "min_confidence": 0.72,
+  "max_comments": 25
+}
